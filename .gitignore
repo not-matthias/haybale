@@ -4,3 +4,8 @@
 **/*.bak
 
 Cargo.lock
+
+# Devenv
+.devenv*
+devenv.local.nix
+

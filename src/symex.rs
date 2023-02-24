@@ -1498,8 +1498,7 @@ where
         let funcname_or_hook: Either<&str, FunctionHook<B>> = match function {
             // the first case is really just an optimization for the second case; things should still work if the first case was omitted
             Either::Right(Operand::ConstantOperand(cref)) if is_global_reference(cref) => match cref.as_ref() {
-                Constant::GlobalReference { name: Name::Name(name), .. } => Either::Left(name),
-                Constant::GlobalReference { name, .. } => panic!("Function with a numbered name: {:?}", name),
+                Constant::GlobalReference { name, .. } => Either::Left(name),
                 _ => panic!("Expected only a GlobalReference here because of earlier check"),
             },
             Either::Right(operand) => {

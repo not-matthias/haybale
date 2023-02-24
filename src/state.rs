@@ -956,7 +956,7 @@ where
             Constant::GlobalReference { name, .. } => {
                 if let Some(ga) = self
                     .global_allocations
-                    .get_global_allocation(name, self.cur_loc.module)
+                    .get_global_allocation(&Name::from(name.as_str()), self.cur_loc.module)
                 {
                     match ga {
                         GlobalAllocation::Function { addr, .. } => Ok(addr.clone()),
@@ -1019,7 +1019,7 @@ where
                     .module
                     .global_aliases
                     .iter()
-                    .find(|a| &a.name == name)
+                    .find(|a| &a.name == &Name::from(name.as_str()))
                 {
                     self.const_to_bv(&alias.aliasee)
                 } else {
