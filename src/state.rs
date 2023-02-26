@@ -1019,7 +1019,7 @@ where
                     .module
                     .global_aliases
                     .iter()
-                    .find(|a| &a.name == &Name::from(name.as_str()))
+                    .find(|a| a.name == name.as_str())
                 {
                     self.const_to_bv(&alias.aliasee)
                 } else {

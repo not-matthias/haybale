@@ -159,7 +159,7 @@ impl Global for GlobalVariable {
         self.linkage
     }
     fn get_name(&self) -> Name {
-        self.name.clone()
+        Name::from(self.name.clone())
     }
 }
 
