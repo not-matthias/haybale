@@ -239,7 +239,7 @@ pub fn get_possible_return_values_of_func<'p>(
     params: Option<Vec<ParameterVal>>,
     thrown_size: Option<u32>,
     n: usize,
-) -> PossibleSolutions<ReturnValue<u64>> {
+) -> Result<PossibleSolutions<ReturnValue<u64>>> {
     let mut em: ExecutionManager<DefaultBackend> =
         symex_function(funcname, project, config, params).unwrap();
 
@@ -250,7 +250,7 @@ pub fn get_possible_return_values_of_func<'p>(
     let mut have_throw = false; // is there at least one `ReturnValue::Throw` in the `candidate_values`
     while let Some(bvretval) = em.next() {
         match bvretval {
-            Err(e) => panic!("{}", em.state().full_error_message_with_context(e)),
+            Err(e) => return Err(e),
             Ok(ReturnValue::ReturnVoid) => {
                 candidate_values.insert(ReturnValue::ReturnVoid);
                 if candidate_values.len() > n {
@@ -342,8 +342,8 @@ pub fn get_possible_return_values_of_func<'p>(
         }
     }
     if candidate_values.len() > n {
-        PossibleSolutions::AtLeast(candidate_values)
+        Ok(PossibleSolutions::AtLeast(candidate_values))
     } else {
-        PossibleSolutions::Exactly(candidate_values)
+        Ok(PossibleSolutions::Exactly(candidate_values))
     }
 }
