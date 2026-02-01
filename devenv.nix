@@ -1,20 +1,18 @@
-{pkgs, ...}: {
+{ pkgs, ... }:
+{
   languages.rust = {
     enable = true;
     version = "latest";
   };
 
   packages = with pkgs; [
-    llvmPackages_15.llvm.dev
+    llvmPackages_21.llvm.dev
     boolector
     gmp
     btor2tools
     libxml2
     ncurses
     zlib
+    z3
   ];
-
-  enterShell = ''
-    export LD_LIBRARY_PATH=
-  '';
 }

@@ -19,7 +19,7 @@ fn call_through_function_ptr() {
     let proj = get_project();
     assert_eq!(
         get_possible_return_values_of_func(funcname, &proj, Config::default(), None, None, 5),
-        PossibleSolutions::exactly_one(ReturnValue::Return(22)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(22))),
     );
 }
 
@@ -29,6 +29,6 @@ fn call_through_function_ptr_struct() {
     let proj = get_project();
     assert_eq!(
         get_possible_return_values_of_func(funcname, &proj, Config::default(), None, None, 5),
-        PossibleSolutions::exactly_one(ReturnValue::Return(15)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(15))),
     );
 }

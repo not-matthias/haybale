@@ -34,7 +34,7 @@ fn atomicrmw() {
     );
     assert_eq!(
         ret,
-        PossibleSolutions::exactly_one(ReturnValue::Return(0xFF00))
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(0xFF00)))
     );
 
     let mut em = symex_function(

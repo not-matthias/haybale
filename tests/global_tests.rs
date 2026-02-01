@@ -31,7 +31,7 @@ fn read_global() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     );
 }
 
@@ -49,7 +49,7 @@ fn modify_global() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     )
 }
 
@@ -67,7 +67,7 @@ fn modify_global_with_call() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     )
 }
 
@@ -85,7 +85,7 @@ fn dont_confuse_globals() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     )
 }
 
@@ -105,7 +105,7 @@ fn cross_module_read_global() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     );
 }
 
@@ -123,7 +123,7 @@ fn cross_module_read_global_via_call() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     );
 }
 
@@ -141,7 +141,7 @@ fn cross_module_modify_global() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     );
 }
 
@@ -159,7 +159,7 @@ fn cross_module_modify_global_via_call() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(3)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(3))),
     );
 }
 
@@ -182,6 +182,6 @@ fn globals_initialization() {
             None,
             5
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(1052)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(1052))),
     )
 }

@@ -32,7 +32,10 @@ fn may_exit() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(1), ReturnValue::Abort),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(1),
+            ReturnValue::Abort,
+        )),
     );
 }
 
@@ -50,6 +53,9 @@ fn may_panic() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(1), ReturnValue::Abort),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(1),
+            ReturnValue::Abort,
+        )),
     );
 }

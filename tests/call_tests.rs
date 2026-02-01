@@ -252,10 +252,10 @@ fn test_pretty_path_llvm_instructions() {
     let state = em.state();
     let len = state.get_path_length();
     let instrs = state.pretty_path_llvm_instructions();
-    let actual_instrs = "%3 = add i32 %1, i32 %0\n\
+    let actual_instrs = "%3 = add nsw i32 %1, i32 %0\n\
                          %4 = tail call @simple_caller(i32 %3)\n\
                          %2 = tail call @simple_callee(i32 %0, i32 3)\n\
-                         %3 = sub i32 %0, i32 %1\n\
+                         %3 = sub nsw i32 %0, i32 %1\n\
                          ret i32 %3\n\
                          ret i32 %2\n\
                          ret i32 %4\n";

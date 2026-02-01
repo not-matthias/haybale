@@ -37,20 +37,20 @@ where
     }
 }
 
-impl<'a, A: Hash, B: Hash> Hash for (dyn KeyPair<A, B> + 'a) {
+impl<'a, A: Hash, B: Hash> Hash for dyn KeyPair<A, B> + 'a {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.a().hash(state);
         self.b().hash(state);
     }
 }
 
-impl<'a, A: Eq, B: Eq> PartialEq for (dyn KeyPair<A, B> + 'a) {
+impl<'a, A: Eq, B: Eq> PartialEq for dyn KeyPair<A, B> + 'a {
     fn eq(&self, other: &Self) -> bool {
         self.a() == other.a() && self.b() == other.b()
     }
 }
 
-impl<'a, A: Eq, B: Eq> Eq for (dyn KeyPair<A, B> + 'a) {}
+impl<'a, A: Eq, B: Eq> Eq for dyn KeyPair<A, B> + 'a {}
 
 // The main event
 pub struct DoubleKeyedMap<A: Eq + Hash, B: Eq + Hash, V> {
@@ -90,7 +90,7 @@ impl<A: Eq + Hash, B: Eq + Hash, V> DoubleKeyedMap<A, B, V> {
     }
 
     // for now we just expose `Pair` in this method
-    pub fn entry(&mut self, a: A, b: B) -> std::collections::hash_map::Entry<Pair<A, B>, V> {
+    pub fn entry(&mut self, a: A, b: B) -> std::collections::hash_map::Entry<'_, Pair<A, B>, V> {
         self.map.entry(Pair(a, b))
     }
 

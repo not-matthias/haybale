@@ -19,6 +19,7 @@ pub fn symex_memset<'p, B: Backend>(
     let val = &call.get_arguments()[1].0;
     let num_bytes = &call.get_arguments()[2].0;
     match state.type_of(addr).as_ref() {
+        #[cfg(feature = "llvm-14-or-lower")]
         Type::PointerType { pointee_type, .. } => match pointee_type.as_ref() {
             Type::IntegerType { bits: 8 } => (),
             _ => {
@@ -28,6 +29,8 @@ pub fn symex_memset<'p, B: Backend>(
                 )))
             },
         },
+        #[cfg(feature = "llvm-15-or-greater")]
+        Type::PointerType { .. } => (),
         ty => {
             return Err(Error::OtherError(format!(
                 "memset: Expected address to have pointer type, got {:?}",
@@ -57,6 +60,7 @@ pub fn symex_memcpy<'p, B: Backend>(
     let src = &call.get_arguments()[1].0;
     let num_bytes = &call.get_arguments()[2].0;
     match state.type_of(dest).as_ref() {
+        #[cfg(feature = "llvm-14-or-lower")]
         Type::PointerType { pointee_type, .. } => match pointee_type.as_ref() {
             Type::IntegerType { bits: 8 } => (),
             _ => {
@@ -66,6 +70,8 @@ pub fn symex_memcpy<'p, B: Backend>(
                 )))
             },
         },
+        #[cfg(feature = "llvm-15-or-greater")]
+        Type::PointerType { .. } => (),
         ty => {
             return Err(Error::OtherError(format!(
                 "memcpy: Expected dest to have pointer type, got {:?}",
@@ -74,6 +80,7 @@ pub fn symex_memcpy<'p, B: Backend>(
         },
     }
     match state.type_of(src).as_ref() {
+        #[cfg(feature = "llvm-14-or-lower")]
         Type::PointerType { pointee_type, .. } => match pointee_type.as_ref() {
             Type::IntegerType { bits: 8 } => (),
             _ => {
@@ -83,6 +90,8 @@ pub fn symex_memcpy<'p, B: Backend>(
                 )))
             },
         },
+        #[cfg(feature = "llvm-15-or-greater")]
+        Type::PointerType { .. } => (),
         ty => {
             return Err(Error::OtherError(format!(
                 "memcpy: Expected dest to have pointer type, got {:?}",

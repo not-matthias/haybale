@@ -4,6 +4,7 @@ use llvm_ir::instruction::{BinaryOp, InlineAssembly};
 use llvm_ir::types::NamedStructDef;
 use llvm_ir::*;
 use log::{debug, info};
+use std::borrow::Cow;
 use std::convert::TryInto;
 use std::fmt;
 
@@ -862,10 +863,20 @@ where
         match self.state.type_of(gep).as_ref() {
             Type::PointerType { .. } => {
                 let bvbase = self.state.operand_to_bv(&gep.address)?;
+                #[cfg(feature = "llvm-15-or-greater")]
+                let base_type = Type::ArrayType {
+                    element_type: gep.source_element_type.clone(),
+                    num_elements: 0,
+                };
+                #[cfg(feature = "llvm-14-or-lower")]
+                let base_type = self.state.type_of(&gep.address);
                 let offset = Self::get_offset_recursive(
                     &self.state,
                     gep.indices.iter(),
-                    &self.state.type_of(&gep.address),
+                    #[cfg(feature = "llvm-15-or-greater")]
+                    &base_type,
+                    #[cfg(feature = "llvm-14-or-lower")]
+                    &base_type,
                     bvbase.get_width(),
                 )?;
                 self.state.record_bv_result(gep, bvbase.add(&offset))
@@ -911,7 +922,22 @@ where
         match indices.next() {
             None => Ok(state.zero(result_bits)),
             Some(index) => match base_type {
+                #[cfg(feature = "llvm-14-or-lower")]
                 Type::PointerType { .. } | Type::ArrayType { .. } | Type::VectorType { .. } => {
+                    let index = state.operand_to_bv(index)?.zero_extend_to_bits(result_bits);
+                    let (offset, nested_ty) =
+                        state.get_offset_bv_index(base_type, &index, state.solver.clone())?;
+                    Self::get_offset_recursive(state, indices, nested_ty, result_bits)
+                        .map(|bv| bv.add(&offset))
+                },
+                #[cfg(feature = "llvm-15-or-greater")]
+                Type::PointerType { .. } => {
+                    return Err(Error::UnsupportedInstruction(
+                        "get_offset on opaque pointer type".to_owned(),
+                    ));
+                },
+                #[cfg(feature = "llvm-15-or-greater")]
+                Type::ArrayType { .. } | Type::VectorType { .. } => {
                     let index = state.operand_to_bv(index)?.zero_extend_to_bits(result_bits);
                     let (offset, nested_ty) =
                         state.get_offset_bv_index(base_type, &index, state.solver.clone())?;
@@ -1369,7 +1395,7 @@ where
                     }
                     Ok(None)
                 } else if let Some((callee, callee_mod)) =
-                    self.state.get_func_by_name(called_funcname)
+                    self.state.get_func_by_name(called_funcname.as_ref())
                 {
                     if call.arguments.len() != callee.parameters.len() {
                         if callee.is_var_arg {
@@ -1456,11 +1482,11 @@ where
                 } else {
                     match self.state.config.function_hooks.get_default_hook() {
                         None => Err(Error::FunctionNotFound(
-                            self.state.demangle(called_funcname),
+                            self.state.demangle(called_funcname.as_ref()),
                         )),
                         Some(hook) => {
                             let hook = hook.clone(); // end the implicit borrow of `self` that arose from `get_default_hook()`. The `clone` is just an `Rc` and a `usize`, as of this writing
-                            let pretty_funcname = self.state.demangle(called_funcname);
+                            let pretty_funcname = self.state.demangle(called_funcname.as_ref());
                             info!(
                                 "Using default hook for a function named {:?}",
                                 pretty_funcname
@@ -1495,10 +1521,13 @@ where
         function: &'p Either<InlineAssembly, Operand>,
     ) -> Result<ResolvedFunction<'p, B>> {
         use crate::global_allocations::Callable;
-        let funcname_or_hook: Either<&str, FunctionHook<B>> = match function {
+        let funcname_or_hook: Either<Cow<'p, str>, FunctionHook<B>> = match function {
             // the first case is really just an optimization for the second case; things should still work if the first case was omitted
             Either::Right(Operand::ConstantOperand(cref)) if is_global_reference(cref) => match cref.as_ref() {
-                Constant::GlobalReference { name, .. } => Either::Left(name),
+                Constant::GlobalReference { name, .. } => match name {
+                    Name::Name(name) => Either::Left(Cow::Borrowed(name.as_str())),
+                    Name::Number(_) => Either::Left(Cow::Owned(name.to_string())),
+                },
                 _ => panic!("Expected only a GlobalReference here because of earlier check"),
             },
             Either::Right(operand) => {
@@ -1506,7 +1535,7 @@ where
                     PossibleSolutions::AtLeast(_) => return Err(Error::OtherError("calling a function pointer which has multiple possible targets".to_owned())),  // there must be at least 2 targets since we passed n==1 to `interpret_as_function_ptr`
                     PossibleSolutions::Exactly(v) => match v.iter().next() {
                         None => return Err(Error::Unsat),  // no valid solutions for the function pointer
-                        Some(Callable::LLVMFunction(f)) => Either::Left(&f.name),
+                        Some(Callable::LLVMFunction(f)) => Either::Left(Cow::Borrowed(f.name.as_str())),
                         Some(Callable::FunctionHook(h)) => Either::Right(h.clone()),
                     }
                 }
@@ -1520,11 +1549,11 @@ where
             },
         };
         match funcname_or_hook {
-            Either::Left(funcname) => match self.state.config.function_hooks.get_hook_for(funcname)
+            Either::Left(funcname) => match self.state.config.function_hooks.get_hook_for(funcname.as_ref())
             {
                 Some(hook) => Ok(ResolvedFunction::HookActive {
                     hook: hook.clone(),
-                    hooked_thing: HookedThing::Function(funcname),
+                    hooked_thing: HookedThing::Function(funcname.clone()),
                 }),
                 None => {
                     // No hook currently defined for this function, check if any intrinsic hooks apply
@@ -1537,7 +1566,7 @@ where
                                 .get_hook_for("intrinsic: llvm.memset")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic memset hook"),
-                            hooked_thing: HookedThing::Function(funcname),
+                            hooked_thing: HookedThing::Function(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.memcpy")
                         || funcname.starts_with("llvm.memmove")
@@ -1551,7 +1580,7 @@ where
                                 .get_hook_for("intrinsic: llvm.memcpy/memmove")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic memcpy/memmove hook"),
-                            hooked_thing: HookedThing::Function(funcname),
+                            hooked_thing: HookedThing::Function(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.bswap") {
                         Ok(ResolvedFunction::HookActive {
@@ -1561,7 +1590,7 @@ where
                                 .get_hook_for("intrinsic: llvm.bswap")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic bswap hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.ctlz") {
                         Ok(ResolvedFunction::HookActive {
@@ -1571,7 +1600,7 @@ where
                                 .get_hook_for("intrinsic: llvm.ctlz")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic ctlz hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.cttz") {
                         Ok(ResolvedFunction::HookActive {
@@ -1581,7 +1610,7 @@ where
                                 .get_hook_for("intrinsic: llvm.cttz")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic cttz hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.objectsize") {
                         Ok(ResolvedFunction::HookActive {
@@ -1591,7 +1620,7 @@ where
                                 .get_hook_for("intrinsic: llvm.objectsize")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic objectsize hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname == "llvm.assume" {
                         Ok(ResolvedFunction::HookActive {
@@ -1601,7 +1630,7 @@ where
                                 .get_hook_for("intrinsic: llvm.assume")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic assume hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.uadd.with.overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1611,7 +1640,7 @@ where
                                 .get_hook_for("intrinsic: llvm.uadd.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic uadd.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.sadd.with.overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1621,7 +1650,7 @@ where
                                 .get_hook_for("intrinsic: llvm.sadd.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic sadd.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.usub.with.overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1631,7 +1660,7 @@ where
                                 .get_hook_for("intrinsic: llvm.usub.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic usub.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.ssub.with.overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1641,7 +1670,7 @@ where
                                 .get_hook_for("intrinsic: llvm.ssub.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic ssub.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.umul.with.overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1651,7 +1680,7 @@ where
                                 .get_hook_for("intrinsic: llvm.umul.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic umul.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.smul_with_overflow") {
                         Ok(ResolvedFunction::HookActive {
@@ -1661,7 +1690,7 @@ where
                                 .get_hook_for("intrinsic: llvm.smul.with.overflow")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic smul.with.overflow hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.uadd.sat") {
                         Ok(ResolvedFunction::HookActive {
@@ -1671,7 +1700,7 @@ where
                                 .get_hook_for("intrinsic: llvm.uadd.sat")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic uadd.sat hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.sadd.sat") {
                         Ok(ResolvedFunction::HookActive {
@@ -1681,7 +1710,7 @@ where
                                 .get_hook_for("intrinsic: llvm.sadd.sat")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic sadd.sat hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.usub.sat") {
                         Ok(ResolvedFunction::HookActive {
@@ -1691,7 +1720,7 @@ where
                                 .get_hook_for("intrinsic: llvm.usub.sat")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic usub.sat hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.ssub.sat") {
                         Ok(ResolvedFunction::HookActive {
@@ -1701,7 +1730,7 @@ where
                                 .get_hook_for("intrinsic: llvm.ssub.sat")
                                 .cloned()
                                 .expect("Failed to find LLVM intrinsic ssub.sat hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.read_register")
                         || funcname.starts_with("llvm.write_register")
@@ -1714,7 +1743,7 @@ where
                                 .get_hook_for("intrinsic: generic_stub_hook")
                                 .cloned()
                                 .expect("Failed to find intrinsic generic stub hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else if funcname.starts_with("llvm.lifetime")
                         || funcname.starts_with("llvm.invariant")
@@ -1732,7 +1761,7 @@ where
                                 .get_hook_for("intrinsic: generic_stub_hook")
                                 .cloned()
                                 .expect("Failed to find intrinsic generic stub hook"),
-                            hooked_thing: HookedThing::Intrinsic(funcname),
+                            hooked_thing: HookedThing::Intrinsic(funcname.clone()),
                         })
                     } else {
                         // No hook currently defined for this function, and none of our intrinsic hooks apply
@@ -2021,7 +2050,7 @@ where
                         .move_to_start_of_bb_by_name(&invoke.return_label);
                     self.symex_from_cur_loc_through_end_of_function()
                 } else if let Some((callee, callee_mod)) =
-                    self.state.get_func_by_name(called_funcname)
+                    self.state.get_func_by_name(called_funcname.as_ref())
                 {
                     if invoke.arguments.len() != callee.parameters.len() {
                         if callee.is_var_arg {
@@ -2111,11 +2140,11 @@ where
                 } else {
                     match self.state.config.function_hooks.get_default_hook() {
                         None => Err(Error::FunctionNotFound(
-                            self.state.demangle(called_funcname),
+                            self.state.demangle(called_funcname.as_ref()),
                         )),
                         Some(hook) => {
                             let hook = hook.clone(); // end the implicit borrow of `self` that arose from `get_default_hook()`. The `clone` is just an `Rc` and a `usize`, as of this writing
-                            let pretty_funcname = self.state.demangle(called_funcname);
+                            let pretty_funcname = self.state.demangle(called_funcname.as_ref());
                             info!(
                                 "Using default hook for a function named {:?}",
                                 pretty_funcname
@@ -2469,6 +2498,11 @@ where
                     "Floating-point operation in an AtomicRMW".into(),
                 ))
             },
+            _ => {
+                return Err(Error::UnsupportedInstruction(
+                    "Unsupported AtomicRMW operation".into(),
+                ))
+            },
         };
         self.state.write(&addr, modified_val)?;
         self.state.record_bv_result(armw, read_val)
@@ -2542,14 +2576,14 @@ enum ResolvedFunction<'p, B: Backend> {
         hooked_thing: HookedThing<'p>,
     },
     NoHookActive {
-        called_funcname: &'p str,
+        called_funcname: Cow<'p, str>,
     },
 }
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 enum HookedThing<'p> {
     /// We are hooking the call of a function with this name
-    Function(&'p str),
+    Function(Cow<'p, str>),
     /// We are hooking the call of an LLVM intrinsic with this name.
     ///
     /// Note: for this purpose,
@@ -2557,7 +2591,7 @@ enum HookedThing<'p> {
     ///     (2) if the `Config` overrides the default intrinsic hook for any intrinsic, that will result
     ///         in a `HookedThing::Function` as well.  That is, `HookedThing::Intrinsic` specifically
     ///         implies we're using the built-in intrinsic hook as well.
-    Intrinsic(&'p str),
+    Intrinsic(Cow<'p, str>),
     /// We are hooking the call of a function pointer
     FunctionPtr,
     /// We are hooking a call to inline assembly

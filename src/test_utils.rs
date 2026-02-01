@@ -32,9 +32,12 @@ pub fn blank_project(modname: impl Into<String>, func: Function) -> Project {
         data_layout: DataLayout::default(),
         target_triple: None,
         functions: vec![func],
+        func_declarations: vec![],
         global_vars: vec![],
         global_aliases: vec![],
+        global_ifuncs: vec![],
         inline_assembly: String::new(),
+        named_metadata: vec![],
         types: Types::blank_for_testing(),
     })
 }

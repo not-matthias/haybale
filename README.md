@@ -43,7 +43,7 @@ haybale = { version = "0.7.1", features = ["llvm-13"] }
 ```
 
 Currently, the supported LLVM versions are `llvm-9`, `llvm-10`, `llvm-11`,
-`llvm-12`, and `llvm-13`.
+`llvm-12`, `llvm-13`, `llvm-15`, and `llvm-21`.
 
 `haybale` depends (indirectly) on the LLVM and Boolector libraries.
 * LLVM must be available on your system, in the version which matches the

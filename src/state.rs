@@ -7,7 +7,6 @@ use llvm_ir::*;
 use log::{debug, info, warn};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::convert::TryInto;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
@@ -282,7 +281,7 @@ impl<'p> Location<'p> {
 }
 
 impl<'p> From<Location<'p>> for LocationDescription<'p> {
-    fn from(loc: Location<'p>) -> LocationDescription {
+    fn from(loc: Location<'p>) -> LocationDescription<'p> {
         LocationDescription {
             modname: loc.module.name.clone(),
             funcname: loc.func.name.clone(),
@@ -523,27 +522,36 @@ where
             // exactly once, and the order doesn't matter, so we simply process
             // definitions, since each global variable must have exactly one
             // definition. Hence the `filter()` above.
-            if let Type::PointerType { pointee_type, .. } = var.ty.as_ref() {
-                let size_bits = state.size_in_bits(&pointee_type).expect(
-                    "Global variable has a struct type which is opaque in the entire Project",
+            let pointee_type = match var.ty.as_ref() {
+                #[cfg(feature = "llvm-14-or-lower")]
+                Type::PointerType { pointee_type, .. } => pointee_type.clone(),
+                #[cfg(feature = "llvm-15-or-greater")]
+                Type::PointerType { .. } => var
+                    .initializer
+                    .as_ref()
+                    .map(|init| init.get_type(&module.types)),
+                _ => panic!("Global variable has non-pointer type {:?}", &var.ty),
+            };
+            let pointee_type = pointee_type.expect(
+                "Global variable has opaque pointer type and no initializer to determine size",
+            );
+            let size_bits = state
+                .size_in_bits(&pointee_type)
+                .expect("Global variable has a struct type which is opaque in the entire Project");
+            let size_bits = if size_bits == 0 {
+                debug!(
+                    "Global {:?} has size 0 bits; allocating 8 bits for it anyway",
+                    var.name
                 );
-                let size_bits = if size_bits == 0 {
-                    debug!(
-                        "Global {:?} has size 0 bits; allocating 8 bits for it anyway",
-                        var.name
-                    );
-                    8
-                } else {
-                    size_bits
-                };
-                let addr = state.allocate(size_bits as u64);
-                debug!("Allocated {:?} at {:?}", var.name, addr);
-                state
-                    .global_allocations
-                    .allocate_global_var(var, module, addr);
+                8
             } else {
-                panic!("Global variable has non-pointer type {:?}", &var.ty);
-            }
+                size_bits
+            };
+            let addr = state.allocate(size_bits as u64);
+            debug!("Allocated {:?} at {:?}", var.name, addr);
+            state
+                .global_allocations
+                .allocate_global_var(var, module, addr);
         }
         // We also have to allocate (at least a tiny bit of) memory for each
         // `Function`, just so that we can have pointers to those `Function`s.
@@ -956,7 +964,7 @@ where
             Constant::GlobalReference { name, .. } => {
                 if let Some(ga) = self
                     .global_allocations
-                    .get_global_allocation(&Name::from(name.as_str()), self.cur_loc.module)
+                    .get_global_allocation(&Name::from(name.clone()), self.cur_loc.module)
                 {
                     match ga {
                         GlobalAllocation::Function { addr, .. } => Ok(addr.clone()),
@@ -1019,7 +1027,7 @@ where
                     .module
                     .global_aliases
                     .iter()
-                    .find(|a| a.name == name.as_str())
+                    .find(|a| &a.name == name)
                 {
                     self.const_to_bv(&alias.aliasee)
                 } else {
@@ -1035,33 +1043,42 @@ where
             Constant::Mul(m) => Ok(self
                 .const_to_bv(&m.operand0)?
                 .mul(&self.const_to_bv(&m.operand1)?)),
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::UDiv(u) => Ok(self
                 .const_to_bv(&u.operand0)?
                 .udiv(&self.const_to_bv(&u.operand1)?)),
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::SDiv(s) => Ok(self
                 .const_to_bv(&s.operand0)?
                 .sdiv(&self.const_to_bv(&s.operand1)?)),
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::URem(u) => Ok(self
                 .const_to_bv(&u.operand0)?
                 .urem(&self.const_to_bv(&u.operand1)?)),
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::SRem(s) => Ok(self
                 .const_to_bv(&s.operand0)?
                 .srem(&self.const_to_bv(&s.operand1)?)),
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::And(a) => Ok(self
                 .const_to_bv(&a.operand0)?
                 .and(&self.const_to_bv(&a.operand1)?)),
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::Or(o) => Ok(self
                 .const_to_bv(&o.operand0)?
                 .or(&self.const_to_bv(&o.operand1)?)),
             Constant::Xor(x) => Ok(self
                 .const_to_bv(&x.operand0)?
                 .xor(&self.const_to_bv(&x.operand1)?)),
+            #[cfg(feature = "llvm-18-or-lower")]
             Constant::Shl(s) => Ok(self
                 .const_to_bv(&s.operand0)?
                 .sll(&self.const_to_bv(&s.operand1)?)),
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::LShr(s) => Ok(self
                 .const_to_bv(&s.operand0)?
                 .srl(&self.const_to_bv(&s.operand1)?)),
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::AShr(s) => Ok(self
                 .const_to_bv(&s.operand0)?
                 .sra(&self.const_to_bv(&s.operand1)?)),
@@ -1108,10 +1125,12 @@ where
                     index
                 ))),
             },
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::ExtractValue(ev) => self.const_to_bv(Self::simplify_const_ev(
                 &ev.aggregate,
                 ev.indices.iter().copied(),
             )?),
+            #[cfg(feature = "llvm-14-or-lower")]
             Constant::InsertValue(iv) => {
                 let c = Self::simplify_const_iv(
                     &iv.aggregate,
@@ -1123,9 +1142,25 @@ where
             Constant::GetElementPtr(gep) => {
                 // heavily inspired by `ExecutionManager::symex_gep()` in symex.rs. TODO could try to share more code
                 let bvbase = self.const_to_bv(&gep.address)?;
+                #[cfg(feature = "llvm-15-or-greater")]
+                let base_type = match gep.address.as_ref() {
+                    Constant::GlobalReference { ty, .. } => Type::ArrayType {
+                        element_type: ty.clone(),
+                        num_elements: 0,
+                    },
+                    _ => Type::ArrayType {
+                        element_type: self.type_of(&gep.address),
+                        num_elements: 0,
+                    },
+                };
+                #[cfg(feature = "llvm-14-or-lower")]
+                let base_type = self.type_of(&gep.address);
                 let offset = self.get_offset_recursive(
                     gep.indices.iter(),
-                    &self.type_of(&gep.address),
+                    #[cfg(feature = "llvm-15-or-greater")]
+                    &base_type,
+                    #[cfg(feature = "llvm-14-or-lower")]
+                    &base_type,
                     bvbase.get_width(),
                 )?;
                 Ok(bvbase.add(&offset))
@@ -1141,6 +1176,7 @@ where
                 self.const_to_bv(&t.operand)
                     .map(|bv| bv.slice(to_size_bits - 1, 0))
             },
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::ZExt(z) => {
                 let to_size_bits = self.size_in_bits(&z.to_type).ok_or_else(|| {
                     Error::OtherError(format!(
@@ -1152,6 +1188,7 @@ where
                 self.const_to_bv(&z.operand)
                     .map(|bv| bv.zero_extend_to_bits(to_size_bits))
             },
+            #[cfg(feature = "llvm-17-or-lower")]
             Constant::SExt(s) => {
                 let to_size_bits = self.size_in_bits(&s.to_type).ok_or_else(|| {
                     Error::OtherError(format!(
@@ -1207,6 +1244,7 @@ where
                 );
                 Ok(bv) // just a cast, it's the same bits underneath
             },
+            #[cfg(feature = "llvm-18-or-lower")]
             Constant::ICmp(icmp) => {
                 let bv0 = self.const_to_bv(&icmp.operand0)?;
                 let bv1 = self.const_to_bv(&icmp.operand1)?;
@@ -1223,6 +1261,7 @@ where
                     IntPredicate::SLE => bv0.slte(&bv1),
                 })
             },
+            #[cfg(feature = "llvm-16-or-lower")]
             Constant::Select(s) => {
                 let b = self.const_to_bv(&s.condition)?;
                 match b.as_bool() {
@@ -1371,7 +1410,22 @@ where
         match indices.next() {
             None => Ok(self.zero(result_bits)),
             Some(index) => match base_type {
+                #[cfg(feature = "llvm-14-or-lower")]
                 Type::PointerType { .. } | Type::ArrayType { .. } | Type::VectorType { .. } => {
+                    let index = self.const_to_bv(index)?.zero_extend_to_bits(result_bits);
+                    let (offset, nested_ty) =
+                        self.get_offset_bv_index(base_type, &index, self.solver.clone())?;
+                    self.get_offset_recursive(indices, nested_ty, result_bits)
+                        .map(|bv| bv.add(&offset))
+                },
+                #[cfg(feature = "llvm-15-or-greater")]
+                Type::PointerType { .. } => {
+                    return Err(Error::UnsupportedInstruction(
+                        "get_offset on opaque pointer type".to_owned(),
+                    ));
+                },
+                #[cfg(feature = "llvm-15-or-greater")]
+                Type::ArrayType { .. } | Type::VectorType { .. } => {
                     let index = self.const_to_bv(index)?.zero_extend_to_bits(result_bits);
                     let (offset, nested_ty) =
                         self.get_offset_bv_index(base_type, &index, self.solver.clone())?;
@@ -1646,6 +1700,7 @@ where
         index: usize,
     ) -> Result<(u32, TypeRef)> {
         match base_type {
+            #[cfg(feature = "llvm-14-or-lower")]
             Type::PointerType {
                 pointee_type: element_type,
                 ..
@@ -1721,6 +1776,7 @@ where
         solver: V::SolverRef,
     ) -> Result<(V, &'t Type)> {
         match base_type {
+            #[cfg(feature = "llvm-14-or-lower")]
             Type::PointerType { pointee_type: element_type, .. }
             | Type::ArrayType { element_type, .. }
             | Type::VectorType { element_type, .. }
@@ -1732,6 +1788,24 @@ where
                 } else {
                     let el_size_bytes = el_size_bits / 8;
                     Ok((index.mul(&V::from_u64(solver, el_size_bytes as u64, index.get_width())), &element_type))
+                }
+            },
+            #[cfg(feature = "llvm-15-or-greater")]
+            Type::PointerType { .. } => {
+                Err(Error::UnsupportedInstruction(
+                    "get_offset on opaque pointer type".to_owned(),
+                ))
+            },
+            #[cfg(feature = "llvm-15-or-greater")]
+            Type::ArrayType { element_type, .. }
+            | Type::VectorType { element_type, .. } => {
+                let el_size_bits = self.size_in_bits(element_type)
+                    .ok_or_else(|| Error::OtherError(format!("get_offset encountered an opaque struct type: {:?}", element_type)))?;
+                if el_size_bits % 8 != 0 {
+                    Err(Error::UnsupportedInstruction(format!("Encountered a type with size {} bits", el_size_bits)))
+                } else {
+                    let el_size_bytes = el_size_bits / 8;
+                    Ok((index.mul(&V::from_u64(solver, el_size_bytes as u64, index.get_width())), element_type))
                 }
             },
             Type::StructType { .. } | Type::NamedStructType { .. } => {
@@ -1975,7 +2049,7 @@ where
         }
         locdescrs
             .into_iter()
-            .zip(1 ..)
+            .zip(1..)
             .map(|(locdescr, framenum)| {
                 let pretty_locdescr = if self.config.print_module_name {
                     locdescr.to_string_with_module()
@@ -2028,14 +2102,14 @@ where
                     if idx != 0 {
                         reenter_set.insert((path_entry.0.bb.name.clone(), idx - 1));
                     }
-                }
+                },
                 BBInstrIndex::Terminator => {
                     let num_instrs = path_entry.0.bb.instrs.len();
                     if num_instrs > 0 {
                         // call is last instruction in block
                         reenter_set.insert((path_entry.0.bb.name.clone(), num_instrs - 1));
                     }
-                }
+                },
             }
         }
         let mut path_str = String::new();
@@ -2053,23 +2127,22 @@ where
                                     broke_early = true;
                                     break;
                                 }
-                            }
-                            _ => {}
+                            },
+                            _ => {},
                         }
                     }
                     // add terminator, but only if we did not leave bb early bc of function call.
                     if !broke_early {
                         path_str.push_str(&format!("{}\n", location.bb.term));
                     }
-                }
+                },
                 BBInstrIndex::Terminator => {
                     path_str.push_str(&format!("{}\n", location.bb.term));
-                }
+                },
             }
         }
         path_str
     }
-
 
     /// returns a `String` containing a formatted view of the full path which led
     /// to this point, in terms of source locations
@@ -2289,7 +2362,7 @@ pub fn get_path_length<'p>(path: &Vec<PathEntry<'p>>) -> usize {
                 } else {
                     0
                 }
-            }
+            },
         };
         acc + entry_len
     })

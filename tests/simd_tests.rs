@@ -27,7 +27,7 @@ fn simd_add() {
             None,
             5,
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(38)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(38))),
     );
 }
 
@@ -80,7 +80,7 @@ fn simd_ops() {
             None,
             5,
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64))),
     );
 }
 
@@ -117,7 +117,7 @@ fn simd_select() {
             None,
             5,
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64))),
     );
 }
 
@@ -140,7 +140,7 @@ fn simd_add_autovectorized() {
             None,
             5,
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(z_sum as u64)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(z_sum as u64))),
     );
 }
 
@@ -189,6 +189,6 @@ fn simd_typeconversions() {
             None,
             5,
         ),
-        PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(retval as u64))),
     )
 }

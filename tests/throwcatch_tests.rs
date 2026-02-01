@@ -25,7 +25,7 @@ fn doesnt_throw() {
         3,
     );
     match rvals {
-        PossibleSolutions::Exactly(hs) => {
+        Ok(PossibleSolutions::Exactly(hs)) => {
             for rval in hs {
                 match rval {
                     ReturnValue::Return(rval) => assert!(rval > 0),
@@ -37,7 +37,8 @@ fn doesnt_throw() {
                 }
             }
         },
-        PossibleSolutions::AtLeast(hs) => panic!("Too many possible solutions: {:?}", hs),
+        Ok(PossibleSolutions::AtLeast(hs)) => panic!("Too many possible solutions: {:?}", hs),
+        Err(e) => panic!("Unexpected error: {:?}", e),
     }
 }
 
@@ -55,7 +56,10 @@ fn throw_uncaught() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(2), ReturnValue::Throw(20)),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(2),
+            ReturnValue::Throw(20),
+        )),
     );
 }
 
@@ -73,7 +77,7 @@ fn throw_multiple_values() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::Exactly(
+        Ok(PossibleSolutions::Exactly(
             vec![
                 ReturnValue::Return(1),
                 ReturnValue::Return(2),
@@ -82,7 +86,7 @@ fn throw_multiple_values() {
             ]
             .into_iter()
             .collect()
-        )
+        ))
     );
 }
 
@@ -100,7 +104,7 @@ fn throw_uncaught_wrongtype() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::Exactly(
+        Ok(PossibleSolutions::Exactly(
             vec![
                 ReturnValue::Return(2),
                 ReturnValue::Throw(20),
@@ -111,7 +115,7 @@ fn throw_uncaught_wrongtype() {
             ]
             .into_iter()
             .collect()
-        )
+        ))
     );
 }
 
@@ -129,7 +133,10 @@ fn throw_uncaught_caller() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(1), ReturnValue::Throw(20)),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(1),
+            ReturnValue::Throw(20),
+        )),
     );
 }
 
@@ -147,7 +154,10 @@ fn throw_and_catch_wildcard() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(2), ReturnValue::Return(5)),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(2),
+            ReturnValue::Return(5),
+        )),
     );
 }
 
@@ -165,7 +175,7 @@ fn throw_and_catch_val() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::Exactly(
+        Ok(PossibleSolutions::Exactly(
             vec![
                 ReturnValue::Return(2),
                 ReturnValue::Return(20),
@@ -176,7 +186,7 @@ fn throw_and_catch_val() {
             ]
             .into_iter()
             .collect()
-        )
+        ))
     );
 }
 
@@ -194,7 +204,7 @@ fn throw_and_catch_in_caller() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::Exactly(
+        Ok(PossibleSolutions::Exactly(
             vec![
                 ReturnValue::Return(2),
                 ReturnValue::Return(20),
@@ -205,7 +215,7 @@ fn throw_and_catch_in_caller() {
             ]
             .into_iter()
             .collect()
-        )
+        ))
     );
 }
 
@@ -225,6 +235,9 @@ fn throw_and_rethrow_in_caller() {
     );
     assert_eq!(
         rvals,
-        PossibleSolutions::exactly_two(ReturnValue::Return(2), ReturnValue::Throw(20)),
+        Ok(PossibleSolutions::exactly_two(
+            ReturnValue::Return(2),
+            ReturnValue::Throw(20),
+        )),
     );
 }

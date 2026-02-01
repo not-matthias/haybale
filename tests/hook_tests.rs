@@ -33,7 +33,7 @@ fn hook_a_function() {
     // with that hook, simple_caller should always return 5 regardless of the value of its argument
     assert_eq!(
         get_possible_return_values_of_func("simple_caller", &proj, config, None, None, 3),
-        PossibleSolutions::exactly_one(ReturnValue::Return(5)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(5))),
     );
 }
 
@@ -79,6 +79,6 @@ fn hook_a_function_ptr() {
     // and therefore fptr_driver() should return 15 instead of 22
     assert_eq!(
         get_possible_return_values_of_func("fptr_driver", &proj, config, None, None, 3),
-        PossibleSolutions::exactly_one(ReturnValue::Return(15)),
+        Ok(PossibleSolutions::exactly_one(ReturnValue::Return(15))),
     );
 }
